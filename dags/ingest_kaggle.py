@@ -1,27 +1,27 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
 from datetime import datetime
 import os
 from kaggle.api.kaggle_api_extended import KaggleApi
 import zipfile
 
-# Define constants
-KAGGLE_DATASET = [
+KAGGLE_DATASETS = [
     "gpreda/pfizer-vaccine-tweets",
     "gpreda/covid19-tweets",
-]  # change this to your dataset
-DOWNLOAD_PATH = "/opt/airflow/dags/data"  # mounted in DAGs directory
+    "kaushiksuresh147/covidvaccine-tweets",
+]
+DOWNLOAD_PATH = "/opt/airflow/dags/data"
 
 
 def download_kaggle_dataset():
     os.makedirs(DOWNLOAD_PATH, exist_ok=True)
-
     api = KaggleApi()
     api.authenticate()
 
-    for x in KAGGLE_DATASET:
-        print(f"Downloading dataset: {x}")
-        api.dataset_download_files(x, path=DOWNLOAD_PATH, unzip=False)
+    for dataset in KAGGLE_DATASETS:
+        print(f"Downloading dataset: {dataset}")
+        api.dataset_download_files(dataset, path=DOWNLOAD_PATH, unzip=False)
 
 
 def unzip_dataset():
@@ -40,11 +40,11 @@ def list_downloaded_files():
 
 
 with DAG(
-    dag_id="kaggle_download_dag",
-    schedule="@daily",  # run manually for now
+    dag_id="kaggle_download_and_merge_dag",
+    schedule="@daily",
     start_date=datetime(2023, 1, 1),
     catchup=False,
-    tags=["kaggle", "download"],
+    tags=["kaggle", "merge", "bash"],
 ) as dag:
 
     download_task = PythonOperator(
@@ -62,4 +62,15 @@ with DAG(
         python_callable=list_downloaded_files,
     )
 
-    download_task >> unzip_task >> list_files_task
+    merge_csv_task = BashOperator(
+        task_id="merge_csv_with_bash",
+        bash_command=(
+            f"cd {DOWNLOAD_PATH} && "
+            "first_file=$(ls *.csv | head -n 1) && "
+            "head -n 1 $first_file > merged.csv && "
+            'for f in *.csv; do tail -n +2 "$f" >> merged.csv; done && '
+            "echo 'CSV files merged into merged.csv'"
+        ),
+    )
+
+    download_task >> unzip_task >> list_files_task >> merge_csv_task
