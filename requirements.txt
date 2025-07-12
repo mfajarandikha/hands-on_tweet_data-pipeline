@@ -1,3 +1,6 @@
 kaggle 
 pandas 
 psycopg2-binary
+asyncpg
+pandasql
+sqlalchemy
